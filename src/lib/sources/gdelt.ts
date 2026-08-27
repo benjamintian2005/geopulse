@@ -30,6 +30,10 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Bounded so 5 sequential category queries in ingest.ts, each retried once
+// on network failure, can never exceed the ingest route's overall budget.
+const REQUEST_TIMEOUT_MS = 12_000;
+
 export async function fetchGdelt(
   query: string,
   maxRecords = 20,
@@ -44,9 +48,23 @@ export async function fetchGdelt(
     timespan: "3h",
   });
 
-  const res = await fetch(`${GDELT_DOC_ENDPOINT}?${params.toString()}`, {
-    headers: { "User-Agent": "geopulse-globe/1.0" },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${GDELT_DOC_ENDPOINT}?${params.toString()}`, {
+      headers: { "User-Agent": "geopulse-globe/1.0" },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    // Network-level failure (DNS, connect timeout, reset) rather than a
+    // non-2xx response — err.cause carries the real reason, which the
+    // default Error stringification drops.
+    const cause = err instanceof Error && err.cause ? ` (${err.cause})` : "";
+    if (retries > 0) {
+      await sleep(1500);
+      return fetchGdelt(query, maxRecords, retries - 1);
+    }
+    throw new Error(`GDELT request failed for "${query}": ${err}${cause}`);
+  }
 
   if (res.status === 429 && retries > 0) {
     await sleep(2000);

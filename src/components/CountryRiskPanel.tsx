@@ -2,13 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useWatchlist } from "@/lib/useWatchlist";
-
-interface CountryRiskScore {
-  country: string;
-  score: number;
-  eventCount: number;
-  lastEventAt: string;
-}
+import type { CountryRiskScore } from "@/lib/useCountryRisk";
 
 interface CountryRiskEvent {
   id: number;
@@ -19,6 +13,12 @@ interface CountryRiskEvent {
   severity: number;
   publishedAt: string;
   weight: number;
+}
+
+interface CountryRiskPanelProps {
+  scores: CountryRiskScore[];
+  selectedCountry: string | null;
+  onSelectCountry: (country: string | null) => void;
 }
 
 const regionNames =
@@ -43,60 +43,57 @@ function timeAgo(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-const POLL_INTERVAL_MS = 60_000;
-
-export default function CountryRiskPanel() {
-  const [scores, setScores] = useState<CountryRiskScore[]>([]);
-  const [expanded, setExpanded] = useState<string | null>(null);
+export default function CountryRiskPanel({
+  scores,
+  selectedCountry,
+  onSelectCountry,
+}: CountryRiskPanelProps) {
   const [provenance, setProvenance] = useState<CountryRiskEvent[]>([]);
   const [loadingProvenance, setLoadingProvenance] = useState(false);
   const { watchlist, toggle } = useWatchlist();
 
   useEffect(() => {
+    if (!selectedCountry) {
+      setProvenance([]);
+      return;
+    }
     let cancelled = false;
-    const load = async () => {
-      try {
-        const res = await fetch("/api/risk");
-        const data = await res.json();
-        if (!cancelled) setScores(data.scores ?? []);
-      } catch {
-        // keep last known scores on transient failure
-      }
-    };
-    load();
-    const interval = setInterval(load, POLL_INTERVAL_MS);
+    setLoadingProvenance(true);
+    fetch(`/api/risk?country=${selectedCountry}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) setProvenance(data.events ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setProvenance([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingProvenance(false);
+      });
     return () => {
       cancelled = true;
-      clearInterval(interval);
     };
-  }, []);
+  }, [selectedCountry]);
 
-  const ranked = [...scores].sort((a, b) => {
+  // Selecting a country with no current score (e.g. clicked on the globe
+  // with no recent events) still gets a row, so it stays visible/expandable.
+  const selectedHasScore =
+    selectedCountry && scores.some((s) => s.country === selectedCountry);
+  const rows: (CountryRiskScore | { country: string; placeholder: true })[] =
+    selectedCountry && !selectedHasScore
+      ? [{ country: selectedCountry, placeholder: true }, ...scores]
+      : scores;
+
+  const ranked = [...rows].sort((a, b) => {
     const aWatched = watchlist.has(a.country);
     const bWatched = watchlist.has(b.country);
     if (aWatched !== bWatched) return aWatched ? -1 : 1;
-    return b.score - a.score;
+    const aScore = "score" in a ? a.score : -1;
+    const bScore = "score" in b ? b.score : -1;
+    return bScore - aScore;
   });
 
-  const handleExpand = async (country: string) => {
-    if (expanded === country) {
-      setExpanded(null);
-      return;
-    }
-    setExpanded(country);
-    setLoadingProvenance(true);
-    try {
-      const res = await fetch(`/api/risk?country=${country}`);
-      const data = await res.json();
-      setProvenance(data.events ?? []);
-    } catch {
-      setProvenance([]);
-    } finally {
-      setLoadingProvenance(false);
-    }
-  };
-
-  const maxScore = Math.max(...ranked.map((r) => r.score), 1);
+  const maxScore = Math.max(...scores.map((r) => r.score), 1);
 
   return (
     <div className="flex h-full flex-col">
@@ -105,18 +102,20 @@ export default function CountryRiskPanel() {
           Country Risk
         </h2>
         <p className="mt-0.5 font-mono text-[10px] text-red-800">
-          decayed severity, {ranked.length} countries active
+          decayed severity, {scores.length} countries active
         </p>
       </div>
       <div className="flex-1 overflow-y-auto">
         {ranked.length === 0 && (
           <p className="p-4 font-mono text-xs text-neutral-600">
-            No scored countries yet…
+            No scored countries yet… click any country on the globe.
           </p>
         )}
         {ranked.map((r) => {
           const isWatched = watchlist.has(r.country);
-          const isExpanded = expanded === r.country;
+          const isExpanded = selectedCountry === r.country;
+          const isPlaceholder = "placeholder" in r;
+          const score = "score" in r ? r.score : 0;
           return (
             <div key={r.country} className="border-b border-red-950">
               <div className="flex items-center gap-2 px-4 py-2.5">
@@ -130,7 +129,9 @@ export default function CountryRiskPanel() {
                   {isWatched ? "★" : "☆"}
                 </button>
                 <button
-                  onClick={() => handleExpand(r.country)}
+                  onClick={() =>
+                    onSelectCountry(isExpanded ? null : r.country)
+                  }
                   className="flex-1 text-left"
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -138,15 +139,19 @@ export default function CountryRiskPanel() {
                       {countryName(r.country)}
                     </span>
                     <span className="font-mono text-[10px] text-neutral-600">
-                      {r.eventCount} events · {timeAgo(r.lastEventAt)}
+                      {isPlaceholder
+                        ? "no recent events"
+                        : `${r.eventCount} events · ${timeAgo(r.lastEventAt)}`}
                     </span>
                   </div>
-                  <div className="mt-1 h-1 w-full overflow-hidden rounded-sm bg-red-950">
-                    <div
-                      className="h-full bg-red-600"
-                      style={{ width: `${(r.score / maxScore) * 100}%` }}
-                    />
-                  </div>
+                  {!isPlaceholder && (
+                    <div className="mt-1 h-1 w-full overflow-hidden rounded-sm bg-red-950">
+                      <div
+                        className="h-full bg-red-600"
+                        style={{ width: `${(score / maxScore) * 100}%` }}
+                      />
+                    </div>
+                  )}
                 </button>
               </div>
               {isExpanded && (
@@ -158,7 +163,9 @@ export default function CountryRiskPanel() {
                   )}
                   {!loadingProvenance && provenance.length === 0 && (
                     <p className="font-mono text-[10px] text-neutral-600">
-                      no underlying events found
+                      No tracked events for this country in the last 30 days.
+                      Historical country risk ratings compiled over time are
+                      coming soon.
                     </p>
                   )}
                   {!loadingProvenance &&

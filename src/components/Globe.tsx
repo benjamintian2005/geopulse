@@ -7,6 +7,8 @@ import type { GeoEvent } from "@/lib/types";
 import type { GlobeInstance } from "globe.gl";
 import type { Topology, GeometryCollection } from "topojson-specification";
 import type * as THREE from "three";
+import { ISO_NUMERIC_TO_ALPHA2 } from "@/lib/isoCountries";
+import type { CountryRiskScore } from "@/lib/useCountryRisk";
 
 const RED = "#ff2d2d";
 
@@ -16,6 +18,15 @@ const countryFeatures = topojson.feature(
     .countries as GeometryCollection,
 ).features;
 
+interface CountryPolygon {
+  id?: string;
+}
+
+function polygonCountryCode(feature: unknown): string | null {
+  const id = (feature as CountryPolygon).id;
+  return id ? (ISO_NUMERIC_TO_ALPHA2[id] ?? null) : null;
+}
+
 function severityColor(severity: number): string {
   if (severity >= 5) return "#ff0000";
   if (severity >= 4) return "#ff3b3b";
@@ -23,25 +34,68 @@ function severityColor(severity: number): string {
   return "#ff9a3b";
 }
 
+// Highest observed decayed score maps to full intensity; tuned for the
+// current 3-day-half-life scoring in src/lib/risk.ts.
+const SCORE_SATURATION = 15;
+
+function scoreFillColor(score: number | undefined): string {
+  if (!score) return "rgba(0,0,0,0)";
+  const t = Math.min(score / SCORE_SATURATION, 1);
+  return `rgba(255,45,45,${0.08 + t * 0.42})`;
+}
+
 interface GlobeViewProps {
   events: GeoEvent[];
   onSelect: (event: GeoEvent) => void;
   flyToId?: number | null;
+  countryScores?: CountryRiskScore[];
+  selectedCountry?: string | null;
+  onCountryClick?: (country: string) => void;
 }
 
 export default function GlobeView({
   events,
   onSelect,
   flyToId,
+  countryScores = [],
+  selectedCountry = null,
+  onCountryClick,
 }: GlobeViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const globeRef = useRef<GlobeInstance | null>(null);
   const onSelectRef = useRef(onSelect);
+  const onCountryClickRef = useRef(onCountryClick);
+  const scoreByCountryRef = useRef<Record<string, number>>({});
+  const selectedCountryRef = useRef(selectedCountry);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
   }, [onSelect]);
+
+  useEffect(() => {
+    onCountryClickRef.current = onCountryClick;
+  }, [onCountryClick]);
+
+  useEffect(() => {
+    selectedCountryRef.current = selectedCountry;
+    refreshPolygons();
+  }, [selectedCountry]);
+
+  useEffect(() => {
+    const map: Record<string, number> = {};
+    for (const s of countryScores) map[s.country] = s.score;
+    scoreByCountryRef.current = map;
+    refreshPolygons();
+  }, [countryScores]);
+
+  function refreshPolygons() {
+    const globeExt = globeRef.current as unknown as {
+      polygonsData?: (d: unknown[]) => void;
+    } | null;
+    // New array reference forces three-globe to re-evaluate every accessor.
+    globeExt?.polygonsData?.([...countryFeatures]);
+  }
 
   useEffect(() => {
     const container = containerRef.current;
@@ -89,17 +143,42 @@ export default function GlobeView({
       // isn't in globe.gl's shipped .d.ts, so it's accessed via a permissive cast.
       const globeExt = globe as unknown as {
         polygonsData: (d: unknown[]) => typeof globe;
-        polygonCapColor: (fn: () => string) => typeof globe;
+        polygonCapColor: (fn: (d: unknown) => string) => typeof globe;
         polygonSideColor: (fn: () => string) => typeof globe;
-        polygonStrokeColor: (fn: () => string) => typeof globe;
+        polygonStrokeColor: (fn: (d: unknown) => string) => typeof globe;
         polygonAltitude: (n: number) => typeof globe;
+        polygonLabel: (fn: (d: unknown) => string) => typeof globe;
+        onPolygonClick: (fn: (d: unknown) => void) => typeof globe;
+        polygonsTransitionDuration: (n: number) => typeof globe;
       };
       globeExt
+        .polygonsTransitionDuration(0)
         .polygonsData(countryFeatures)
-        .polygonCapColor(() => "rgba(0,0,0,0)")
+        .polygonCapColor((d) =>
+          scoreFillColor(
+            scoreByCountryRef.current[polygonCountryCode(d) ?? ""],
+          ),
+        )
         .polygonSideColor(() => "rgba(255,20,20,0.04)")
-        .polygonStrokeColor(() => RED)
-        .polygonAltitude(0.004);
+        .polygonStrokeColor((d) =>
+          polygonCountryCode(d) === selectedCountryRef.current
+            ? "#ffffff"
+            : RED,
+        )
+        .polygonAltitude(0.004)
+        .polygonLabel((d) => {
+          const code = polygonCountryCode(d);
+          const score = code ? scoreByCountryRef.current[code] : undefined;
+          const name =
+            (d as { properties?: { name?: string } }).properties?.name ?? "";
+          return `<div style="font-family:monospace;color:#ff5555;background:#0a0000;border:1px solid #ff2d2d;padding:6px 8px;border-radius:2px">
+              <b>${name}</b>${score ? `<br/>risk score: ${score.toFixed(1)}` : ""}
+            </div>`;
+        })
+        .onPolygonClick((d) => {
+          const code = polygonCountryCode(d);
+          if (code) onCountryClickRef.current?.(code);
+        });
 
       globe.pointOfView({ lat: 25, lng: 30, altitude: 2.3 });
 

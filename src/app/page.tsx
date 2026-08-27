@@ -8,16 +8,19 @@ import ConnectionStatus from "@/components/ConnectionStatus";
 import AlertToast from "@/components/AlertToast";
 import CountryRiskPanel from "@/components/CountryRiskPanel";
 import { useEventStream } from "@/lib/useEventStream";
+import { useCountryRisk } from "@/lib/useCountryRisk";
 import { CATEGORIES, type Category } from "@/lib/categories";
 import type { GeoEvent } from "@/lib/types";
 
 export default function Home() {
   const { events, status, incoming, dismissIncoming } = useEventStream();
+  const countryScores = useCountryRisk();
   const [activeCategories, setActiveCategories] = useState<Set<Category>>(
     new Set(CATEGORIES),
   );
   const [selected, setSelected] = useState<GeoEvent | null>(null);
   const [showRiskPanel, setShowRiskPanel] = useState(true);
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
 
   const filtered = useMemo(
     () => events.filter((e) => activeCategories.has(e.category as Category)),
@@ -40,6 +43,12 @@ export default function Home() {
           events={filtered}
           onSelect={setSelected}
           flyToId={selected?.id ?? null}
+          countryScores={countryScores}
+          selectedCountry={selectedCountry}
+          onCountryClick={(country) => {
+            setSelectedCountry(country);
+            setShowRiskPanel(true);
+          }}
         />
       </div>
 
@@ -98,7 +107,11 @@ export default function Home() {
       {/* Country risk sidebar */}
       {showRiskPanel && (
         <div className="absolute bottom-0 left-0 top-0 z-10 w-80 border-r border-red-950 bg-black/85 backdrop-blur-sm">
-          <CountryRiskPanel />
+          <CountryRiskPanel
+            scores={countryScores}
+            selectedCountry={selectedCountry}
+            onSelectCountry={setSelectedCountry}
+          />
         </div>
       )}
     </div>
