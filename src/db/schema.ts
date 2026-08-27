@@ -18,6 +18,7 @@ export const events = pgTable(
     summary: text("summary").notNull(),
     category: text("category").notNull(), // "us-iran" | "russia-ukraine" | "other"
     location: text("location").notNull(),
+    country: text("country"), // ISO 3166-1 alpha-2, e.g. "IR" — nullable for pre-existing rows
     lat: doublePrecision("lat").notNull(),
     lon: doublePrecision("lon").notNull(),
     severity: smallint("severity").notNull(), // 1-5
@@ -29,6 +30,7 @@ export const events = pgTable(
   (table) => [
     index("events_created_at_idx").on(table.createdAt),
     index("events_category_idx").on(table.category),
+    index("events_country_idx").on(table.country),
   ],
 );
 

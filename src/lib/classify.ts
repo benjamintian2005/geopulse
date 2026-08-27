@@ -24,6 +24,12 @@ const classifiedItemSchema = z.object({
   location: z
     .string()
     .describe("Primary place name the event is centered on, e.g. 'Tehran, Iran'"),
+  country: z
+    .string()
+    .length(2)
+    .describe(
+      "ISO 3166-1 alpha-2 code of the country the event is centered in, e.g. 'IR' for Iran, uppercase",
+    ),
   lat: z.number(),
   lon: z.number(),
   severity: z
@@ -60,7 +66,7 @@ export async function classifyBatch(
     system:
       "You are a geopolitical intelligence analyst triaging a live news feed for a situation-awareness map. " +
       "For each numbered item, decide if it is a genuine, specific geopolitical/conflict event, then extract a factual one-line summary, " +
-      "the category, the primary location with approximate real-world latitude/longitude, and a 1-5 severity score. " +
+      "the category, the primary location and its ISO 3166-1 alpha-2 country code, approximate real-world latitude/longitude, and a 1-5 severity score. " +
       "Reject opinion pieces, retrospectives, sports, and anything not tied to a concrete event.",
     prompt,
   });

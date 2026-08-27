@@ -6,6 +6,7 @@ import FeedPanel from "@/components/FeedPanel";
 import CategoryFilter from "@/components/CategoryFilter";
 import ConnectionStatus from "@/components/ConnectionStatus";
 import AlertToast from "@/components/AlertToast";
+import CountryRiskPanel from "@/components/CountryRiskPanel";
 import { useEventStream } from "@/lib/useEventStream";
 import { CATEGORIES, type Category } from "@/lib/categories";
 import type { GeoEvent } from "@/lib/types";
@@ -16,6 +17,7 @@ export default function Home() {
     new Set(CATEGORIES),
   );
   const [selected, setSelected] = useState<GeoEvent | null>(null);
+  const [showRiskPanel, setShowRiskPanel] = useState(true);
 
   const filtered = useMemo(
     () => events.filter((e) => activeCategories.has(e.category as Category)),
@@ -54,7 +56,17 @@ export default function Home() {
             <CategoryFilter active={activeCategories} onToggle={toggleCategory} />
           </div>
         </div>
-        <div className="pointer-events-auto">
+        <div className="pointer-events-auto flex items-center gap-2">
+          <button
+            onClick={() => setShowRiskPanel((v) => !v)}
+            className={`rounded-full border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider transition ${
+              showRiskPanel
+                ? "border-red-500 bg-red-950/60 text-red-300 shadow-[0_0_8px_rgba(255,0,0,0.3)]"
+                : "border-neutral-800 text-neutral-600 hover:border-red-900 hover:text-red-700"
+            }`}
+          >
+            Country Risk
+          </button>
           <ConnectionStatus status={status} />
         </div>
       </div>
@@ -82,6 +94,13 @@ export default function Home() {
           onSelect={setSelected}
         />
       </div>
+
+      {/* Country risk sidebar */}
+      {showRiskPanel && (
+        <div className="absolute bottom-0 left-0 top-0 z-10 w-80 border-r border-red-950 bg-black/85 backdrop-blur-sm">
+          <CountryRiskPanel />
+        </div>
+      )}
     </div>
   );
 }

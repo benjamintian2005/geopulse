@@ -75,6 +75,7 @@ export async function runIngest(): Promise<IngestResult> {
             summary: c.summary,
             category: c.category,
             location: c.location,
+            country: c.country.toUpperCase(),
             lat: c.lat,
             lon: c.lon,
             severity: c.severity,
