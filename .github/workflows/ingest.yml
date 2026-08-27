@@ -10,6 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
+      - name: DEBUG - test GDELT reachability from this runner
+        run: |
+          curl -sS -o /dev/null -w "GDELT connect test: HTTP %{http_code}, time %{time_total}s\n" \
+            --connect-timeout 10 \
+            "https://api.gdeltproject.org/api/v2/doc/doc?query=test&mode=ArtList&maxrecords=1&format=json&timespan=3h" || echo "GDELT unreachable from this runner"
       - name: Call /api/ingest
         run: |
           status=$(curl -sS -o /tmp/body.txt -w "%{http_code}" \
