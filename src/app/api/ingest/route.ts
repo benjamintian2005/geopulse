@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runIngest } from "@/lib/ingest";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 function isAuthorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
