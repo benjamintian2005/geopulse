@@ -25,7 +25,9 @@ export default function FeedPanel({
   selectedId,
   onSelect,
 }: FeedPanelProps) {
-  const sorted = [...events].sort((a, b) => b.id - a.id);
+  const sorted = [...events].sort(
+    (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime(),
+  );
 
   return (
     <div className="flex h-full flex-col">

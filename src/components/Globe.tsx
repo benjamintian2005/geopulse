@@ -233,7 +233,10 @@ export default function GlobeView({
     globe.pointsData(events);
 
     const latest = [...events]
-      .sort((a, b) => b.id - a.id)
+      .sort(
+        (a, b) =>
+          new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime(),
+      )
       .slice(0, 12)
       .filter((e) => e.severity >= 3);
     globe.ringsData(latest);
