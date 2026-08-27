@@ -2,7 +2,9 @@ name: Ingest live events
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    # Offset from :00/:15/:30/:45 -- GitHub's own docs note scheduled
+    # workflows can be delayed at exact hour/quarter-hour marks due to load.
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch: {}
 
 jobs:
