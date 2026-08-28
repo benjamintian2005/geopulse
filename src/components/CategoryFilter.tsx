@@ -12,14 +12,14 @@ export default function CategoryFilter({
   onToggle,
 }: CategoryFilterProps) {
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-nowrap gap-1.5 sm:flex-wrap">
       {CATEGORIES.map((cat) => {
         const isActive = active.has(cat);
         return (
           <button
             key={cat}
             onClick={() => onToggle(cat)}
-            className={`rounded-full border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider transition ${
+            className={`shrink-0 rounded-full border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider transition ${
               isActive
                 ? "border-red-500 bg-red-950/60 text-red-300 shadow-[0_0_8px_rgba(255,0,0,0.3)]"
                 : "border-neutral-800 text-neutral-600 hover:border-red-900 hover:text-red-700"
