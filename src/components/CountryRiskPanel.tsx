@@ -15,6 +15,24 @@ interface CountryRiskEvent {
   weight: number;
 }
 
+interface CountrySnapshot {
+  country: string;
+  currency: {
+    currency: string;
+    rate: number;
+    changePct: number | null;
+    date: string;
+    source: "ecb" | "community";
+  } | null;
+  index: {
+    symbol: string;
+    name: string;
+    price: number;
+    change: number;
+    changePct: number;
+  } | null;
+}
+
 interface CountryRiskPanelProps {
   scores: CountryRiskScore[];
   selectedCountry: string | null;
@@ -50,6 +68,7 @@ export default function CountryRiskPanel({
 }: CountryRiskPanelProps) {
   const [provenance, setProvenance] = useState<CountryRiskEvent[]>([]);
   const [loadingProvenance, setLoadingProvenance] = useState(false);
+  const [snapshot, setSnapshot] = useState<CountrySnapshot | null>(null);
   const { watchlist, toggle } = useWatchlist();
 
   useEffect(() => {
@@ -69,6 +88,25 @@ export default function CountryRiskPanel({
       })
       .finally(() => {
         if (!cancelled) setLoadingProvenance(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCountry]);
+
+  useEffect(() => {
+    if (!selectedCountry) {
+      setSnapshot(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/country-snapshot?country=${selectedCountry}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) setSnapshot(data);
+      })
+      .catch(() => {
+        if (!cancelled) setSnapshot(null);
       });
     return () => {
       cancelled = true;
@@ -148,6 +186,55 @@ export default function CountryRiskPanel({
               </div>
               {isExpanded && (
                 <div className="border-t border-red-950/70 bg-black/40 px-4 py-2">
+                  {snapshot?.country === r.country &&
+                    (snapshot.currency || snapshot.index) && (
+                      <div className="mb-2 grid grid-cols-2 gap-2 border-b border-red-950/70 pb-2">
+                        {snapshot.currency && (
+                          <div>
+                            <div className="font-mono text-[9px] uppercase tracking-wider text-neutral-500">
+                              USD/{snapshot.currency.currency}
+                            </div>
+                            <div className="font-mono text-xs text-red-300">
+                              {snapshot.currency.rate < 1
+                                ? snapshot.currency.rate.toFixed(4)
+                                : snapshot.currency.rate.toFixed(2)}
+                            </div>
+                            {snapshot.currency.changePct != null && (
+                              <div
+                                className={`font-mono text-[10px] ${
+                                  snapshot.currency.changePct >= 0
+                                    ? "text-emerald-500"
+                                    : "text-red-500"
+                                }`}
+                              >
+                                {snapshot.currency.changePct >= 0 ? "+" : ""}
+                                {snapshot.currency.changePct.toFixed(2)}%
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {snapshot.index && (
+                          <div>
+                            <div className="truncate font-mono text-[9px] uppercase tracking-wider text-neutral-500">
+                              {snapshot.index.name}
+                            </div>
+                            <div className="font-mono text-xs text-red-300">
+                              {snapshot.index.price.toLocaleString()}
+                            </div>
+                            <div
+                              className={`font-mono text-[10px] ${
+                                snapshot.index.changePct >= 0
+                                  ? "text-emerald-500"
+                                  : "text-red-500"
+                              }`}
+                            >
+                              {snapshot.index.changePct >= 0 ? "+" : ""}
+                              {snapshot.index.changePct.toFixed(2)}%
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   {loadingProvenance && (
                     <p className="font-mono text-[10px] text-neutral-600">
                       loading source events…

@@ -132,3 +132,86 @@ export async function fetchForexRates(): Promise<ForexRate[]> {
 
   return [...majors, ...extra];
 }
+
+export interface SingleCurrencyRate {
+  currency: string;
+  rate: number;
+  changePct: number | null;
+  date: string;
+  source: "ecb" | "community";
+}
+
+// On-demand lookup for any single currency vs USD — used by the
+// country-click snapshot, which needs whatever currency a given country
+// uses rather than the fixed curated list above. Tries Frankfurter/ECB
+// first (most authoritative), falls back to the broader community CDN for
+// currencies ECB doesn't carry. Returns null if neither source has it.
+export async function fetchUsdRateFor(
+  currency: string,
+): Promise<SingleCurrencyRate | null> {
+  const ccy = currency.toUpperCase();
+  if (ccy === "USD") {
+    return {
+      currency: "USD",
+      rate: 1,
+      changePct: 0,
+      date: new Date().toISOString().slice(0, 10),
+      source: "ecb",
+    };
+  }
+
+  const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+
+  try {
+    const params = new URLSearchParams({ from: "USD", to: ccy });
+    const res = await fetch(`${FRANKFURTER_ENDPOINT}/latest?${params.toString()}`, {
+      headers: { "User-Agent": "geopulse-globe/1.0" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as FrankfurterResponse;
+      const rate = data.rates[ccy];
+      if (rate != null) {
+        let changePct: number | null = null;
+        try {
+          const prevRes = await fetch(
+            `${FRANKFURTER_ENDPOINT}/${twoDaysAgo}?${params.toString()}`,
+            { headers: { "User-Agent": "geopulse-globe/1.0" }, signal: AbortSignal.timeout(10_000) },
+          );
+          if (prevRes.ok) {
+            const prevData = (await prevRes.json()) as FrankfurterResponse;
+            const prevRate = prevData.rates[ccy];
+            if (prevRate != null) changePct = ((rate - prevRate) / prevRate) * 100;
+          }
+        } catch {
+          // Change % is a nice-to-have — keep the rate even if this fails.
+        }
+        return { currency: ccy, rate, changePct, date: data.date, source: "ecb" };
+      }
+    }
+  } catch {
+    // Fall through to the community CDN below.
+  }
+
+  try {
+    const key = ccy.toLowerCase();
+    const [latest, previous] = await Promise.all([
+      fetchCdnRatesOn("latest"),
+      fetchCdnRatesOn(twoDaysAgo).catch(() => null),
+    ]);
+    const rate = latest.usd[key];
+    if (rate == null) return null;
+    const prevRate = previous?.usd[key];
+    return {
+      currency: ccy,
+      rate,
+      changePct: prevRate != null ? ((rate - prevRate) / prevRate) * 100 : null,
+      date: latest.date,
+      source: "community",
+    };
+  } catch {
+    return null;
+  }
+}
