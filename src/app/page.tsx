@@ -26,10 +26,12 @@ import type {
   PopulationResponse,
   MacroResponse,
   ForexResponse,
+  CftcResponse,
 } from "@/lib/dataLayerTypes";
 import type { GeoEvent } from "@/lib/types";
 
 const FOREX_POLL_MS = 5 * 60_000;
+const CFTC_POLL_MS = 60 * 60_000;
 
 const MOBILE_TABS: { id: DashboardTab; label: string }[] = [
   { id: "feed", label: "Feed" },
@@ -128,6 +130,13 @@ export default function Home() {
     FOREX_POLL_MS,
     true,
   );
+  // CFTC Commitments of Traders — weekly speculative positioning, same
+  // always-on treatment as the rates themselves.
+  const cftcLayer = useLiveLayer<CftcResponse>(
+    "/api/layers/cftc",
+    CFTC_POLL_MS,
+    true,
+  );
 
   const extraPoints = useMemo(() => {
     const points = [];
@@ -172,6 +181,7 @@ export default function Home() {
     population: populationLayer.data,
     macro: macroLayer.data,
     forex: forexLayer.data,
+    cftc: cftcLayer.data,
     connectionStatus: status,
   };
 

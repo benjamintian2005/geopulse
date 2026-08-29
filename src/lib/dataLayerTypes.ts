@@ -7,6 +7,7 @@ import type { SatelliteRecord } from "@/lib/sources/celestrak";
 import type { CryptoMarketSnapshot } from "@/lib/sources/coingecko";
 import type { RepoSignal } from "@/lib/sources/github";
 import type { WorldBankObservation } from "@/lib/sources/worldbank";
+import type { CftcPosition } from "@/lib/sources/cftc";
 
 export interface FlightsResponse {
   aircraft: TrackedAircraft[];
@@ -55,4 +56,8 @@ export interface ForexRate {
 
 export interface ForexResponse {
   rates: ForexRate[];
+}
+
+export interface CftcResponse {
+  positions: CftcPosition[];
 }

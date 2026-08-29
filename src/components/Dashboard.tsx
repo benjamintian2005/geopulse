@@ -21,6 +21,7 @@ import type {
   PopulationResponse,
   MacroResponse,
   ForexResponse,
+  CftcResponse,
 } from "@/lib/dataLayerTypes";
 
 export type DashboardTab = "feed" | "risk" | "layers" | "forex";
@@ -53,6 +54,7 @@ interface DashboardProps {
   macro: MacroResponse | null;
 
   forex: ForexResponse | null;
+  cftc: CftcResponse | null;
 
   connectionStatus: ConnectionState;
 }
@@ -145,7 +147,9 @@ export default function Dashboard(props: DashboardProps) {
             macro={props.macro}
           />
         )}
-        {activeTab === "forex" && <ForexPanel data={props.forex} />}
+        {activeTab === "forex" && (
+          <ForexPanel data={props.forex} cftc={props.cftc} />
+        )}
       </div>
     </div>
   );
