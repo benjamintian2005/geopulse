@@ -9,6 +9,13 @@ import type { Topology, GeometryCollection } from "topojson-specification";
 import type * as THREE from "three";
 import { ISO_NUMERIC_TO_ALPHA2 } from "@/lib/isoCountries";
 import type { CountryRiskScore } from "@/lib/useCountryRisk";
+import type { ExtraMapPoint } from "@/lib/mapPoints";
+
+type GlobePoint = GeoEvent | ExtraMapPoint;
+
+function isExtraPoint(d: GlobePoint): d is ExtraMapPoint {
+  return "kind" in d;
+}
 
 const RED = "#ff2d2d";
 
@@ -51,6 +58,7 @@ interface GlobeViewProps {
   countryScores?: CountryRiskScore[];
   selectedCountry?: string | null;
   onCountryClick?: (country: string) => void;
+  extraPoints?: ExtraMapPoint[];
 }
 
 export default function GlobeView({
@@ -60,6 +68,7 @@ export default function GlobeView({
   countryScores = [],
   selectedCountry = null,
   onCountryClick,
+  extraPoints = [],
 }: GlobeViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const globeRef = useRef<GlobeInstance | null>(null);
@@ -113,24 +122,33 @@ export default function GlobeView({
         .atmosphereColor(RED)
         .atmosphereAltitude(0.18)
         .pointsMerge(false)
-        .pointLat((d) => (d as GeoEvent).lat)
-        .pointLng((d) => (d as GeoEvent).lon)
+        .pointLat((d) => (d as GlobePoint).lat)
+        .pointLng((d) => (d as GlobePoint).lon)
         .pointAltitude((d) => {
-          const e = d as GeoEvent;
-          return 0.015 + e.severity * 0.008;
+          const p = d as GlobePoint;
+          return isExtraPoint(p) ? 0.012 : 0.015 + p.severity * 0.008;
         })
         .pointRadius((d) => {
-          const e = d as GeoEvent;
-          return 0.35 + e.severity * 0.12;
+          const p = d as GlobePoint;
+          return isExtraPoint(p) ? p.radius : 0.35 + p.severity * 0.12;
         })
-        .pointColor((d) => severityColor((d as GeoEvent).severity))
-        .pointLabel(
-          (d) =>
-            `<div style="font-family:monospace;color:#ff5555;background:#0a0000;border:1px solid #ff2d2d;padding:6px 8px;border-radius:2px;max-width:260px">
-              <b>${(d as GeoEvent).location}</b><br/>${(d as GeoEvent).summary}
-            </div>`,
-        )
-        .onPointClick((d) => onSelectRef.current(d as GeoEvent))
+        .pointColor((d) => {
+          const p = d as GlobePoint;
+          return isExtraPoint(p) ? p.color : severityColor(p.severity);
+        })
+        .pointLabel((d) => {
+          const p = d as GlobePoint;
+          const body = isExtraPoint(p)
+            ? p.label
+            : `<b>${p.location}</b><br/>${p.summary}`;
+          return `<div style="font-family:monospace;color:#ff5555;background:#0a0000;border:1px solid #ff2d2d;padding:6px 8px;border-radius:2px;max-width:260px">
+              ${body}
+            </div>`;
+        })
+        .onPointClick((d) => {
+          const p = d as GlobePoint;
+          if (!isExtraPoint(p)) onSelectRef.current(p);
+        })
         .ringsData([])
         .ringLat((d) => (d as GeoEvent).lat)
         .ringLng((d) => (d as GeoEvent).lon)
@@ -230,7 +248,7 @@ export default function GlobeView({
   useEffect(() => {
     const globe = globeRef.current;
     if (!globe || !ready) return;
-    globe.pointsData(events);
+    globe.pointsData([...events, ...extraPoints]);
 
     const latest = [...events]
       .sort(
@@ -240,7 +258,7 @@ export default function GlobeView({
       .slice(0, 12)
       .filter((e) => e.severity >= 3);
     globe.ringsData(latest);
-  }, [events, ready]);
+  }, [events, extraPoints, ready]);
 
   useEffect(() => {
     const globe = globeRef.current;

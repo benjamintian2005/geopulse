@@ -97,14 +97,6 @@ export default function CountryRiskPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-red-900/50 px-4 py-3">
-        <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-red-500">
-          Country Risk
-        </h2>
-        <p className="mt-0.5 font-mono text-[10px] text-red-800">
-          decayed severity, {scores.length} countries active
-        </p>
-      </div>
       <div className="flex-1 overflow-y-auto">
         {ranked.length === 0 && (
           <p className="p-4 font-mono text-xs text-neutral-600">

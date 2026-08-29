@@ -1,7 +1,12 @@
 import { generateObject } from "ai";
 import { z } from "zod";
-import { CATEGORIES } from "./categories";
+import { NEWS_CATEGORIES } from "./categories";
 import type { RawItem } from "./sources/gdelt";
+
+// LLM classification only ever assigns news-query-driven categories (plus
+// "other") — the feed-driven categories (earthquake, natural-disaster) are
+// pre-classified by their own source modules and never routed through here.
+const CLASSIFIABLE_CATEGORIES = [...NEWS_CATEGORIES, "other"] as const;
 
 const KEYWORDS =
   /iran|israel|gaza|palestin|hamas|hezbollah|lebanon|russia|ukraine|kremlin|putin|zelensk|taiwan|beijing|china.*military|north korea|kim jong|pyongyang|missile|airstrike|nuclear|sanctions|troops|invasion|ceasefire|drone strike/i;
@@ -20,7 +25,7 @@ const classifiedItemSchema = z.object({
   summary: z
     .string()
     .describe("One tight sentence, under 200 characters, plain factual tone"),
-  category: z.enum(CATEGORIES),
+  category: z.enum(CLASSIFIABLE_CATEGORIES),
   location: z
     .string()
     .describe("Primary place name the event is centered on, e.g. 'Tehran, Iran'"),

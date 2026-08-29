@@ -1,29 +1,56 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import GlobeView from "@/components/Globe";
-import FeedPanel from "@/components/FeedPanel";
 import CategoryFilter from "@/components/CategoryFilter";
-import ConnectionStatus from "@/components/ConnectionStatus";
 import AlertToast from "@/components/AlertToast";
-import CountryRiskPanel from "@/components/CountryRiskPanel";
+import Dashboard, { type DashboardTab } from "@/components/Dashboard";
 import { useEventStream } from "@/lib/useEventStream";
 import { useCountryRisk } from "@/lib/useCountryRisk";
-import { CATEGORIES, type Category } from "@/lib/categories";
+import { useLiveLayer } from "@/lib/useLiveLayer";
+import {
+  flightsToPoints,
+  commercialFlightsToPoints,
+  weatherToPoints,
+} from "@/lib/mapPoints";
+import { CORE_CATEGORIES, type Category } from "@/lib/categories";
+import { DATA_LAYER_POLL_MS, type DataLayerId } from "@/lib/dataLayers";
+import type {
+  FlightsResponse,
+  CommercialFlightsResponse,
+  WeatherResponse,
+  SatellitesResponse,
+  CryptoResponse,
+  GithubResponse,
+  GdpResponse,
+  PopulationResponse,
+  MacroResponse,
+  ForexResponse,
+} from "@/lib/dataLayerTypes";
 import type { GeoEvent } from "@/lib/types";
 
-type MobilePanel = "feed" | "risk" | null;
+const FOREX_POLL_MS = 5 * 60_000;
+
+const MOBILE_TABS: { id: DashboardTab; label: string }[] = [
+  { id: "feed", label: "Feed" },
+  { id: "risk", label: "Risk" },
+  { id: "layers", label: "Layers" },
+  { id: "forex", label: "Forex" },
+];
 
 export default function Home() {
   const { events, status, incoming, dismissIncoming } = useEventStream();
   const countryScores = useCountryRisk();
   const [activeCategories, setActiveCategories] = useState<Set<Category>>(
-    new Set(CATEGORIES),
+    new Set(CORE_CATEGORIES),
   );
   const [selected, setSelected] = useState<GeoEvent | null>(null);
-  const [showRiskPanel, setShowRiskPanel] = useState(true);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
-  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
+  const [activeTab, setActiveTab] = useState<DashboardTab>("feed");
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [activeDataLayers, setActiveDataLayers] = useState<Set<DataLayerId>>(
+    new Set(),
+  );
 
   const filtered = useMemo(
     () => events.filter((e) => activeCategories.has(e.category as Category)),
@@ -39,6 +66,115 @@ export default function Home() {
     });
   };
 
+  const toggleDataLayer = (id: DataLayerId) => {
+    setActiveDataLayers((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const flightsLayer = useLiveLayer<FlightsResponse>(
+    "/api/layers/flights",
+    DATA_LAYER_POLL_MS.flights,
+    activeDataLayers.has("flights"),
+  );
+  const commercialFlightsLayer = useLiveLayer<CommercialFlightsResponse>(
+    "/api/layers/commercial-flights",
+    DATA_LAYER_POLL_MS["commercial-flights"],
+    activeDataLayers.has("commercial-flights"),
+  );
+  const weatherLayer = useLiveLayer<WeatherResponse>(
+    "/api/layers/weather",
+    DATA_LAYER_POLL_MS.weather,
+    activeDataLayers.has("weather"),
+  );
+  const satellitesLayer = useLiveLayer<SatellitesResponse>(
+    "/api/layers/satellites",
+    DATA_LAYER_POLL_MS.satellites,
+    activeDataLayers.has("satellites"),
+  );
+  const cryptoLayer = useLiveLayer<CryptoResponse>(
+    "/api/layers/crypto",
+    DATA_LAYER_POLL_MS.crypto,
+    activeDataLayers.has("crypto"),
+  );
+  const githubLayer = useLiveLayer<GithubResponse>(
+    "/api/layers/github",
+    DATA_LAYER_POLL_MS.github,
+    activeDataLayers.has("github"),
+  );
+  const gdpLayer = useLiveLayer<GdpResponse>(
+    "/api/layers/gdp",
+    DATA_LAYER_POLL_MS.gdp,
+    activeDataLayers.has("gdp"),
+  );
+  const populationLayer = useLiveLayer<PopulationResponse>(
+    "/api/layers/population",
+    DATA_LAYER_POLL_MS.population,
+    activeDataLayers.has("population"),
+  );
+  const macroLayer = useLiveLayer<MacroResponse>(
+    "/api/layers/macro",
+    DATA_LAYER_POLL_MS.macro,
+    activeDataLayers.has("macro"),
+  );
+
+  // Forex is the app's headline feature, not an opt-in layer — it polls
+  // continuously rather than gating behind a checkbox.
+  const forexLayer = useLiveLayer<ForexResponse>(
+    "/api/layers/forex",
+    FOREX_POLL_MS,
+    true,
+  );
+
+  const extraPoints = useMemo(() => {
+    const points = [];
+    if (activeDataLayers.has("flights") && flightsLayer.data) {
+      points.push(...flightsToPoints(flightsLayer.data.aircraft));
+    }
+    if (activeDataLayers.has("commercial-flights") && commercialFlightsLayer.data) {
+      points.push(...commercialFlightsToPoints(commercialFlightsLayer.data.aircraft));
+    }
+    if (activeDataLayers.has("weather") && weatherLayer.data) {
+      points.push(...weatherToPoints(weatherLayer.data.conditions));
+    }
+    return points;
+  }, [
+    activeDataLayers,
+    flightsLayer.data,
+    commercialFlightsLayer.data,
+    weatherLayer.data,
+  ]);
+
+  const dashboardProps = {
+    events: filtered,
+    selectedEventId: selected?.id ?? null,
+    onSelectEvent: (event: GeoEvent) => {
+      setSelected(event);
+      setMobileOpen(false);
+    },
+    countryScores,
+    selectedCountry,
+    onSelectCountry: setSelectedCountry,
+    activeCategories,
+    onToggleCategory: toggleCategory,
+    activeDataLayers,
+    onToggleDataLayer: toggleDataLayer,
+    flights: flightsLayer.data,
+    commercialFlights: commercialFlightsLayer.data,
+    weather: weatherLayer.data,
+    satellites: satellitesLayer.data,
+    crypto: cryptoLayer.data,
+    github: githubLayer.data,
+    gdp: gdpLayer.data,
+    population: populationLayer.data,
+    macro: macroLayer.data,
+    forex: forexLayer.data,
+    connectionStatus: status,
+  };
+
   return (
     <div className="relative h-dvh w-dvw overflow-hidden bg-black">
       <div className="absolute inset-0">
@@ -46,21 +182,23 @@ export default function Home() {
           events={filtered}
           onSelect={(event) => {
             setSelected(event);
-            setMobilePanel(null);
+            setActiveTab("feed");
+            setMobileOpen(false);
           }}
           flyToId={selected?.id ?? null}
           countryScores={countryScores}
           selectedCountry={selectedCountry}
           onCountryClick={(country) => {
             setSelectedCountry(country);
-            setShowRiskPanel(true);
-            setMobilePanel("risk");
+            setActiveTab("risk");
+            setMobileOpen(true);
           }}
+          extraPoints={extraPoints}
         />
       </div>
 
       {/* Top bar */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-2 p-3 sm:gap-4 sm:p-4">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 p-3 sm:p-4 lg:right-96">
         <div className="pointer-events-auto min-w-0">
           <h1 className="font-mono text-base font-bold tracking-[0.2em] text-red-500 drop-shadow-[0_0_10px_rgba(255,0,0,0.6)] sm:text-lg sm:tracking-[0.3em]">
             GEOPULSE
@@ -72,23 +210,10 @@ export default function Home() {
             <CategoryFilter active={activeCategories} onToggle={toggleCategory} />
           </div>
         </div>
-        <div className="pointer-events-auto flex items-center gap-2">
-          <button
-            onClick={() => setShowRiskPanel((v) => !v)}
-            className={`hidden rounded-full border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider transition lg:block ${
-              showRiskPanel
-                ? "border-red-500 bg-red-950/60 text-red-300 shadow-[0_0_8px_rgba(255,0,0,0.3)]"
-                : "border-neutral-800 text-neutral-600 hover:border-red-900 hover:text-red-700"
-            }`}
-          >
-            Country Risk
-          </button>
-          <ConnectionStatus status={status} />
-        </div>
       </div>
 
       {/* Incoming alert toasts */}
-      <div className="pointer-events-none absolute inset-x-3 top-24 z-20 flex flex-col gap-2 sm:inset-x-auto sm:right-4 sm:w-80">
+      <div className="pointer-events-none absolute inset-x-3 top-24 z-20 flex flex-col gap-2 sm:inset-x-auto sm:right-[26rem] sm:w-80">
         {incoming.slice(-4).map((event) => (
           <AlertToast
             key={event.id}
@@ -96,81 +221,54 @@ export default function Home() {
             onDismiss={() => dismissIncoming(event.id)}
             onFocus={() => {
               setSelected(event);
-              dismissIncoming(event.id);
-              setMobilePanel(null);
+              setActiveTab("feed");
+              setMobileOpen(false);
             }}
           />
         ))}
       </div>
 
-      {/* Desktop sidebar feed */}
+      {/* Desktop dashboard — single tabbed panel, always visible */}
       <div className="absolute bottom-0 right-0 top-0 z-10 hidden w-96 border-l border-red-950 bg-black/85 backdrop-blur-sm lg:block">
-        <FeedPanel
-          events={filtered}
-          selectedId={selected?.id ?? null}
-          onSelect={setSelected}
-        />
+        <Dashboard activeTab={activeTab} onTabChange={setActiveTab} {...dashboardProps} />
       </div>
 
-      {/* Desktop country risk sidebar */}
-      {showRiskPanel && (
-        <div className="absolute bottom-0 left-0 top-0 z-10 hidden w-80 border-r border-red-950 bg-black/85 backdrop-blur-sm lg:block">
-          <CountryRiskPanel
-            scores={countryScores}
-            selectedCountry={selectedCountry}
-            onSelectCountry={setSelectedCountry}
-          />
-        </div>
-      )}
-
-      {/* Mobile bottom-sheet panel */}
-      {mobilePanel && (
+      {/* Mobile bottom-sheet dashboard */}
+      {mobileOpen && (
         <div className="absolute inset-x-0 bottom-14 top-24 z-20 rounded-t-xl border-t border-red-950 bg-black/95 backdrop-blur-sm lg:hidden">
-          {mobilePanel === "feed" ? (
-            <FeedPanel
-              events={filtered}
-              selectedId={selected?.id ?? null}
-              onSelect={(event) => {
-                setSelected(event);
-                setMobilePanel(null);
-              }}
-            />
-          ) : (
-            <CountryRiskPanel
-              scores={countryScores}
-              selectedCountry={selectedCountry}
-              onSelectCountry={setSelectedCountry}
-            />
-          )}
+          <Dashboard
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            showTabBar={false}
+            {...dashboardProps}
+          />
         </div>
       )}
 
       {/* Mobile bottom tab bar */}
       <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex h-14 border-t border-red-950 bg-black/95 backdrop-blur-sm lg:hidden">
-        <button
-          onClick={() =>
-            setMobilePanel((p) => (p === "risk" ? null : "risk"))
-          }
-          className={`flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-wider transition ${
-            mobilePanel === "risk" ? "text-red-400" : "text-neutral-500"
-          }`}
-        >
-          Country Risk
-        </button>
-        <div className="w-px bg-red-950" />
-        <button
-          onClick={() =>
-            setMobilePanel((p) => (p === "feed" ? null : "feed"))
-          }
-          className={`flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-wider transition ${
-            mobilePanel === "feed" ? "text-red-400" : "text-neutral-500"
-          }`}
-        >
-          Live Feed{" "}
-          {filtered.length > 0 && (
-            <span className="ml-1 text-red-700">({filtered.length})</span>
-          )}
-        </button>
+        {MOBILE_TABS.map((tab, i) => (
+          <Fragment key={tab.id}>
+            {i > 0 && <div className="w-px bg-red-950" />}
+            <button
+              onClick={() => {
+                if (mobileOpen && activeTab === tab.id) {
+                  setMobileOpen(false);
+                } else {
+                  setActiveTab(tab.id);
+                  setMobileOpen(true);
+                }
+              }}
+              className={`flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-wider transition ${
+                mobileOpen && activeTab === tab.id
+                  ? "text-red-400"
+                  : "text-neutral-500"
+              }`}
+            >
+              {tab.label}
+            </button>
+          </Fragment>
+        ))}
       </div>
     </div>
   );

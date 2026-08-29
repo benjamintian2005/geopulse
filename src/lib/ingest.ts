@@ -4,12 +4,22 @@ import { inArray } from "drizzle-orm";
 import { CATEGORY_QUERIES } from "./categories";
 import { fetchGdelt, type RawItem } from "./sources/gdelt";
 import { fetchAllRssFeeds } from "./sources/rss";
+import { fetchUsgsEarthquakes } from "./sources/usgs";
+import { fetchNasaEonet } from "./sources/eonet";
+import { fetchGdacsAlerts } from "./sources/gdacs";
+import type { DirectItem } from "./sources/direct";
 import { classifyBatch, isLikelyGeopolitical } from "./classify";
 
 const BATCH_SIZE = 15;
 
 function dedupeByUrl(items: RawItem[]): RawItem[] {
   const seen = new Map<string, RawItem>();
+  for (const item of items) seen.set(item.url, item);
+  return [...seen.values()];
+}
+
+function dedupeDirectByUrl(items: DirectItem[]): DirectItem[] {
+  const seen = new Map<string, DirectItem>();
   for (const item of items) seen.set(item.url, item);
   return [...seen.values()];
 }
@@ -38,25 +48,52 @@ export async function runIngest(): Promise<IngestResult> {
     return [] as RawItem[];
   });
 
+  const [usgsResults, eonetResults, gdacsResults] = await Promise.all([
+    fetchUsgsEarthquakes().catch((err) => {
+      errors.push(`usgs: ${err}`);
+      return [] as DirectItem[];
+    }),
+    fetchNasaEonet().catch((err) => {
+      errors.push(`eonet: ${err}`);
+      return [] as DirectItem[];
+    }),
+    fetchGdacsAlerts().catch((err) => {
+      errors.push(`gdacs: ${err}`);
+      return [] as DirectItem[];
+    }),
+  ]);
+
   const all = dedupeByUrl([...gdeltResults.flat(), ...rssResults]);
   const candidates = all.filter(
     (item) => item.source === "gdelt" || isLikelyGeopolitical(item),
   );
+  const direct = dedupeDirectByUrl([
+    ...usgsResults,
+    ...eonetResults,
+    ...gdacsResults,
+  ]);
 
-  if (candidates.length === 0) {
-    return { fetched: all.length, candidates: 0, inserted: 0, errors };
+  if (candidates.length === 0 && direct.length === 0) {
+    return {
+      fetched: all.length + direct.length,
+      candidates: 0,
+      inserted: 0,
+      errors,
+    };
   }
 
   const db = getDb();
 
   // Skip URLs we've already stored.
+  const allUrls = [...candidates.map((c) => c.url), ...direct.map((d) => d.url)];
   const existing = await db
     .select({ url: events.url })
     .from(events)
-    .where(inArray(events.url, candidates.map((c) => c.url)))
+    .where(inArray(events.url, allUrls))
     .catch(() => []);
   const existingUrls = new Set(existing.map((e) => e.url));
   const fresh = candidates.filter((c) => !existingUrls.has(c.url));
+  const freshDirect = direct.filter((d) => !existingUrls.has(d.url));
 
   let inserted = 0;
 
@@ -98,5 +135,36 @@ export async function runIngest(): Promise<IngestResult> {
     await new Promise((resolve) => setTimeout(resolve, 800));
   }
 
-  return { fetched: all.length, candidates: fresh.length, inserted, errors };
+  if (freshDirect.length > 0) {
+    try {
+      const rows = freshDirect.map((item) => ({
+        source: item.source,
+        url: item.url,
+        title: item.title,
+        summary: item.summary,
+        category: item.category,
+        location: item.location,
+        country: item.country ? item.country.toUpperCase() : null,
+        lat: item.lat,
+        lon: item.lon,
+        severity: item.severity,
+        publishedAt: item.publishedAt,
+      }));
+      const result = await db
+        .insert(events)
+        .values(rows)
+        .onConflictDoNothing({ target: events.url })
+        .returning({ id: events.id });
+      inserted += result.length;
+    } catch (err) {
+      errors.push(`direct insert: ${err}`);
+    }
+  }
+
+  return {
+    fetched: all.length + direct.length,
+    candidates: fresh.length + freshDirect.length,
+    inserted,
+    errors,
+  };
 }

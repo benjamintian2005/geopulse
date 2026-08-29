@@ -1,6 +1,6 @@
 "use client";
 
-import { CATEGORIES, CATEGORY_LABELS, type Category } from "@/lib/categories";
+import { CORE_CATEGORIES, CATEGORY_LABELS, type Category } from "@/lib/categories";
 
 interface CategoryFilterProps {
   active: Set<Category>;
@@ -13,7 +13,7 @@ export default function CategoryFilter({
 }: CategoryFilterProps) {
   return (
     <div className="flex flex-nowrap gap-1.5 sm:flex-wrap">
-      {CATEGORIES.map((cat) => {
+      {CORE_CATEGORIES.map((cat) => {
         const isActive = active.has(cat);
         return (
           <button
